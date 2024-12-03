@@ -30,8 +30,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+".venv/**/*" = ["ALL"]
+"temp/*" = ["ALL"]
 "**/{tests,docs,tools}/**/*" = ["S101"]
-"ml/*" = ["RET504", "N806"]
+"src/ml/*" = ["N806"]
 
 [tool.ruff.format]
 # skip-magic-trailing-comma = true
@@ -50,3 +52,7 @@ convention = "google"
 #disallow_untyped_defs = true
 ignore_missing_imports = true
 follow_imports = "skip"
+
+
+[tool.pyright]
+reportMissingImports = "warning"

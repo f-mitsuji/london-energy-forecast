@@ -1,2 +1,7 @@
+__pycache__/
+.mypy_cache/
 .venv/
-data/
+.vscode/
+/data/
+logs/
+temp/

@@ -1,4 +1,9 @@
+holidays
 ipykernel
 jupyter
+matplotlib
 padas
 polars
+scikit-learn
+seaborn
+tensorflow
