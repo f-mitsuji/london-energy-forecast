@@ -1,0 +1,51 @@
+Weather Data Quality Report
+=========================
+
+1. Basic Information
+Total Records: 8759
+Date Range: 2013-01-01 00:00:00 to 2013-12-31 23:00:00
+
+2. Missing Values
+                 Missing Count  Missing Percentage
+cld_ttl_amt_id             708                8.08
+wmo_hr_sun_dur             367                4.19
+wind_speed                 167                1.91
+wind_direction             167                1.91
+visibility                  69                0.79
+air_temperature              0                0.00
+rltv_hum                     0                0.00
+dewpoint                     0                0.00
+wetb_temp                    0                0.00
+
+3. Value Ranges
+Statistical Summary:
+       air_temperature     rltv_hum  wmo_hr_sun_dur   wind_speed  cld_ttl_amt_id   visibility     dewpoint    wetb_temp  wind_direction
+count      8759.000000  8759.000000     8392.000000  8592.000000     8051.000000  8690.000000  8759.000000  8759.000000     8592.000000
+mean         10.948522    75.015356        0.173284     8.030144        4.410384  2236.022785     6.332241     8.720756      187.430168
+std           6.704471    15.919546        0.333150     4.211264        3.412838  1137.982064     5.586982     5.525273      103.536274
+min          -4.200000    15.500000        0.000000     0.000000        0.000000     6.000000    -9.600000    -4.400000        0.000000
+25%           5.800000    64.900000        0.000000     5.000000        0.000000  1300.000000     2.100000     4.400000       80.000000
+50%          10.600000    78.400000        0.000000     7.000000        6.000000  2300.000000     6.800000     8.900000      210.000000
+75%          15.800000    88.000000        0.100000    10.000000        8.000000  3000.000000    10.700000    13.100000      270.000000
+max          33.700000    98.800000        1.000000    32.000000        9.000000  7500.000000    19.600000    22.900000      360.000000
+
+Out of Range Values:
+
+4. Temporal Consistency
+Time Interval Statistics:
+count                         8758
+mean     0 days 01:00:00.411052751
+std      0 days 00:00:38.468037464
+min                0 days 01:00:00
+25%                0 days 01:00:00
+50%                0 days 01:00:00
+75%                0 days 01:00:00
+max                0 days 02:00:00
+
+Irregular Time Intervals:
+Total irregular intervals: 1
+Details:
+  Timestamp: 2013-11-07 12:00:00, Interval: 0 days 02:00:00
+
+
+Rapid Changes Detected:
