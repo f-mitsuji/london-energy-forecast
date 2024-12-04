@@ -14,24 +14,6 @@ def get_header_indices(header_file):
     return header_dict
 
 
-def get_quality_value(parts, feature, header_indices):
-    # OB_TIME、RLTV_HUMには品質列なし
-    if feature in ["OB_TIME", "RLTV_HUM"]:
-        return None
-
-    quality_column = f"{feature}_Q"
-    if quality_column in header_indices:
-        return parts[header_indices[quality_column]].strip()
-    return None
-
-
-def get_qc_level(quality):
-    """品質値から末尾の数字(qc_level)を取得."""
-    if not quality:
-        return -1
-    return int(quality[-1])
-
-
 def extract_weather(input_file, output_file, src_id):
     header_file = RAW_WEATHER_DIR / "WH_Column_Headers.txt"
     header_indices = get_header_indices(header_file)
@@ -39,16 +21,15 @@ def extract_weather(input_file, output_file, src_id):
     selected_weather_features = [
         "OB_TIME",
         "AIR_TEMPERATURE",
-        # "CS_HR_SUN_DUR",
-        "WMO_HR_SUN_DUR",
-        "DEWPOINT",
-        "CLD_TTL_AMT_ID",
-        "WETB_TEMP",
-        "VISIBILITY",
-        "WIND_SPEED",
-        "WIND_DIRECTION",
-        # "PRST_WX_ID",
         "RLTV_HUM",
+        "WMO_HR_SUN_DUR",
+        "WIND_SPEED",
+        "CLD_TTL_AMT_ID",
+        "VISIBILITY",
+        "DEWPOINT",
+        "WETB_TEMP",
+        "WIND_DIRECTION",
+        # "PRST_WX_ID",  # 欠損値多い
     ]
 
     time_data = defaultdict(list)
@@ -65,17 +46,15 @@ def extract_weather(input_file, output_file, src_id):
                 ):
                     if len(parts) != len(header_indices):
                         print(f"Warning: Invalid data found: {parts}")
-                    ob_time = parts[header_indices["OB_TIME"]].strip()
-                    row_data = []
-                    row_qualities = []
 
+                    ob_time = parts[header_indices["OB_TIME"]].strip()
+
+                    row_data = []
                     for feature in selected_weather_features:
                         value = parts[header_indices[feature]].strip()
-                        quality = get_quality_value(parts, feature, header_indices)
                         row_data.append(value)
-                        row_qualities.append(quality)
 
-                    time_data[ob_time].append((row_data, row_qualities))
+                    time_data[ob_time].append(row_data)
 
         with output_file.open("w", encoding="utf-8") as f_out:
             writer = csv.writer(f_out)
@@ -83,26 +62,9 @@ def extract_weather(input_file, output_file, src_id):
 
             for entries in time_data.values():
                 if len(entries) == 1:
-                    writer.writerow(entries[0][0])
+                    writer.writerow(entries[0])
                 else:
-                    # 重複がある場合、各エントリーの品質レベルの最小値を比較
-                    best_entry = None
-                    best_min_qc_level = -1
-
-                    for entry, qualities in entries:
-                        # 品質値がある要素のみを考慮
-                        valid_qualities = [q for q in qualities if q is not None]
-                        qc_levels = [-1] if not valid_qualities else [get_qc_level(q) for q in valid_qualities]
-
-                        # 最も低いqc_levelを取得
-                        min_qc_level = min(qc_levels)
-
-                        # より高いqc_levelを持つエントリーを選択
-                        if min_qc_level > best_min_qc_level:
-                            best_entry = entry
-                            best_min_qc_level = min_qc_level
-
-                    writer.writerow(best_entry[0] if best_entry else entries[0][0])
+                    writer.writerow(entries[-1])
 
     except FileNotFoundError:
         print(f"Error: Could not find input file {input_file}")
