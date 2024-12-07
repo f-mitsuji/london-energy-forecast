@@ -2,7 +2,7 @@ holidays
 ipykernel
 jupyter
 matplotlib
-padas
+pandas
 polars
 scikit-learn
 seaborn
