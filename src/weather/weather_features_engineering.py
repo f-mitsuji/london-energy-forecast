@@ -23,25 +23,21 @@ def engineer_weather_features(input_file: Path, output_file: Path, base_temps: d
     features = pd.DataFrame()
     features["ob_time"] = df["ob_time"]
 
-    # 冷暖房需要（度日）- 線形項と二乗項
     cooling_degrees = calculate_degree_days(temp=df["air_temperature"], base_temp=base_temps["cooling"])
     heating_degrees = calculate_degree_days(
         temp=-df["air_temperature"],
         base_temp=-base_temps["heating"],
     )
 
-    features["cooling_degree"] = cooling_degrees["linear"]
+    features["cooling_degree"] = cooling_degrees["linear"].round(1)
     features["cooling_degree_squared"] = cooling_degrees["squared"].round(2)
-    features["heating_degree"] = heating_degrees["linear"]
+    features["heating_degree"] = heating_degrees["linear"].round(1)
     features["heating_degree_squared"] = heating_degrees["squared"].round(2)
 
-    # 不快指数
     features["discomfort_index"] = calculate_discomfort_index(df["air_temperature"], df["rltv_hum"]).round(2)
 
-    # 日照時間（元データをそのまま使用）
     features["sun_duration"] = df["wmo_hr_sun_dur"]
 
-    # 雲量（0-9スケールを0-1に変換）
     features["cloud_cover"] = (df["cld_ttl_amt_id"] / 9).round(3)
 
     features.to_csv(output_file, index=False)
@@ -55,8 +51,8 @@ def engineer_weather_features(input_file: Path, output_file: Path, base_temps: d
 
 if __name__ == "__main__":
     base_temps = {
-        "cooling": 22.0,  # 冷房の基準温度
-        "heating": 15.5,  # 暖房の基準温度
+        "cooling": 20.0,
+        "heating": 15.5,
     }
 
     input_file = INTERIM_WEATHER_DIR / "heathrow_weather_2011-2014_linear_interpolated_30min.csv"
