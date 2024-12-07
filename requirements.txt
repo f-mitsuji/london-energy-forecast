@@ -6,4 +6,5 @@ padas
 polars
 scikit-learn
 seaborn
+statsmodels
 tensorflow
