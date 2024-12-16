@@ -1,10 +1,14 @@
+cupy-cuda12x
 holidays
 ipykernel
 jupyter
 matplotlib
-padas
+pandas
 polars
+pycaret
 scikit-learn
 seaborn
 statsmodels
 tensorflow
+torch
+xgboost

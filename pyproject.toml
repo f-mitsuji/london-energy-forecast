@@ -34,7 +34,8 @@ allowed-confusables = ["（", "）"]
 ".venv/**/*" = ["ALL"]
 "temp/*" = ["ALL"]
 "**/{tests,docs,tools}/**/*" = ["S101"]
-"src/ml/*" = ["N806"]
+"src/ml/*" = ["N806", "N803"]
+"notebooks/*" = ["N806"]
 
 [tool.ruff.format]
 # skip-magic-trailing-comma = true
