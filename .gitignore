@@ -2,6 +2,6 @@ __pycache__/
 .mypy_cache/
 .venv/
 .vscode/
-/data/
+data/
 logs/
 temp/
