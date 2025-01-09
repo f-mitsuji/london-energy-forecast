@@ -4,7 +4,7 @@ from logging import FileHandler, Formatter, StreamHandler
 from pathlib import Path
 
 
-def setup_logger(name: str = "energy_forecast", log_dir: Path | str = "logs") -> logging.Logger:
+def setup_logger(name: str, log_dir: Path | str = "logs") -> logging.Logger:
     log_dir = Path(log_dir)
     log_dir.mkdir(exist_ok=True)
 
