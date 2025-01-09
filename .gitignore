@@ -3,5 +3,6 @@ __pycache__/
 .venv/
 .vscode/
 data/
+debug_output/
 logs/
 temp/
