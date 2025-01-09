@@ -1,5 +1,4 @@
 import logging
-import sys
 from typing import Any
 
 import numpy as np
@@ -8,6 +7,7 @@ import xgboost as xgb
 from src.ml.base_model import BaseModel
 from src.ml.data_preparation import DataPreparation
 from src.ml.model_evaluator import ModelEvaluator
+from src.ml.visualizer import Visualizer
 from src.utils import setup_logger
 
 
@@ -18,14 +18,7 @@ class XGBoostModel(BaseModel):
             "objective": "reg:squarederror",
             "validate_parameters": True,
             "random_state": 1,
-            # "device": "cuda",
-            "n_estimators": 1000,
-            "tree_method": "hist",
-            "max_depth": 8,
-            "learning_rate": 0.05,
-            "min_child_weight": 3,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
+            "n_estimators": 100,
         }
         self.model_params = {**self.default_params, **params}
         self.model: xgb.XGBRegressor = None
@@ -40,145 +33,117 @@ class XGBoostModel(BaseModel):
         hours = float(numeric_part)
         return int(hours * 2)
 
-    def predict(self, X, decimals: int = 3) -> np.ndarray:
+    def predict(self, X) -> np.ndarray:
         if not self.is_fitted:
             msg = "Model must be trained before making predictions"
             raise ValueError(msg)
 
-        predictions = self.model.predict(X)
+        return self.model.predict(X)
 
-        # 予測値を丸める
-        # rounded_predictions = np.round(predictions, decimals)
-
-        return predictions
-
-    def predict_72h(self, test_df, train_df, target_col: str = "demand"):
-        logger = logging.getLogger("energy_forecast")
-
+    def predict_72h(
+        self, test_df, train_df, y_test, target_col: str = "demand", debug_output_path: str = "debug_output"
+    ):
         if not self.is_fitted:
-            msg = "Model must be trained before making predictions"
-            logger.error(msg)
-            sys.exit(1)
+            raise ValueError("Model must be trained before making predictions")
 
-        # Initialize data
-        original_df = test_df.copy()
-        full_history = list(train_df[target_col].values)
-        final_predictions = []
-        all_predictions = []
-        feature_cols = test_df.columns.tolist()
+        # デバッグ出力用のディレクトリ作成
+        import os
 
-        # Extract lag features
-        lag_cols = [col for col in feature_cols if "lag" in col]
-        lag_periods = [self._extract_period(col.split("_")[-1]) for col in lag_cols]
-        logger.debug(f"Lag features: {list(zip(lag_cols, lag_periods, strict=True))}")
+        os.makedirs(debug_output_path, exist_ok=True)
 
-        # Extract rolling features and build patterns
-        rolling_cols = [col for col in feature_cols if "rolling" in col]
-        rolling_info = []
-        for col in rolling_cols:
-            parts = col.split("_")
-            hours = float(parts[-2].replace("h", ""))
-            stat = parts[-1]
-            points = int(hours * 2)  # 時間を30分単位のポイント数に変換
-            rolling_info.append((stat, points))
+        # 基本設定
+        window_size = 144  # 72時間分
+        n_windows = len(test_df) // window_size
+        predictions = []
 
-        # 統計量ごとにwindowサイズをグループ化
-        rolling_patterns = {}
-        for stat, points in rolling_info:
-            if stat not in rolling_patterns:
-                rolling_patterns[stat] = set()
-            rolling_patterns[stat].add(points)
-        rolling_patterns = {stat: sorted(list(points)) for stat, points in rolling_patterns.items()}
+        # データをnumpy配列に変換
+        y_train = train_df.to_numpy()
+        y_test = y_test.to_numpy()
 
-        logger.debug("Rolling patterns:")
-        for stat, points in rolling_patterns.items():
-            hours = [p / 2 for p in points]
-            logger.debug(f"  {stat}: {points} points ({hours} hours)")
+        logger = logging.getLogger("xgboost")
+        logger.info(f"Starting predictions for {n_windows} windows")
 
-        # Prediction cycle (72 hours = 144 points)
-        cycle_length = 144
+        for window_idx in range(n_windows):
+            # デバッグ情報を格納するリスト
+            debug_info = []
 
-        for i in range(len(test_df)):
-            point_in_cycle = i % cycle_length
-            hours = point_in_cycle / 2.0
+            # ウィンドウの範囲を設定
+            start_idx = window_idx * window_size
+            end_idx = start_idx + window_size
+            window_data = test_df.iloc[start_idx:end_idx].copy()
+            window_actual = y_test[start_idx:end_idx]
 
-            # Make prediction
-            current_features = test_df.iloc[[i]]
-            pred = self.predict(current_features)[0]
-            all_predictions.append(pred)
-            final_predictions.append(pred)
-            full_history.append(pred)
+            logger.info(f"Processing window {window_idx + 1}/{n_windows}")
 
-            # Update features for next prediction
-            if i < len(test_df) - 1:
-                next_row_idx = test_df.iloc[[i + 1]].index[0]
+            # このウィンドウでの予測
+            for i in range(len(window_data)):
+                point_in_cycle = i
+                hours = point_in_cycle / 2.0
 
-                # Update lag features
-                for lag, col in zip(lag_periods, lag_cols, strict=True):
-                    if i + 1 >= lag:
-                        history_idx = len(full_history) - lag
-                        if history_idx >= 0:
-                            test_df.loc[next_row_idx, col] = full_history[history_idx]
+                # 現在の特徴量でのlag値を記録
+                current_lags = {col: window_data.iloc[i][col] for col in window_data.columns if "lag" in col}
 
-                # Update rolling features
-                current_full_history = full_history[: idx + 1]
-                for stat, points_list in rolling_patterns.items():
-                    for points in points_list:
-                        hours = points // 2
-                        col = f"demand_rolling_{hours}h_{stat}"
+                # 予測
+                current_features = window_data.iloc[[i]]
+                pred = float(self.predict(current_features)[0])
+                predictions.append(pred)
 
-                        if col not in test_df.columns:
-                            continue
+                # デバッグ情報を収集
+                debug_row = {
+                    "window": window_idx + 1,
+                    "point": point_in_cycle,
+                    "hours": hours,
+                    "prediction": pred,
+                    "actual": window_actual[i],
+                }
+                debug_row.update(current_lags)
+                debug_info.append(debug_row)
 
-                        # Get data for rolling window (closed='left')
-                        end_idx = i + 1
-                        start_idx = max(0, end_idx - points)
-                        window_data = current_full_history[start_idx:end_idx]
+                # 次のステップのlag特徴量を更新
+                if i < len(window_data) - 1:
+                    next_idx = window_data.index[i + 1]
+                    for col in window_data.columns:
+                        if "lag" in col:
+                            hours = float(col.split("_")[-1].replace("h", ""))
+                            points = int(hours * 2)
 
-                        if len(window_data) == 0:
-                            continue
+                            # 全体のインデックスを計算
+                            global_idx = len(y_train) + start_idx + i + 1
+                            history_idx = global_idx - points
 
-                        # Calculate rolling statistics
-                        if stat == "mean":
-                            new_value = np.mean(window_data)
-                        elif stat == "std":
-                            new_value = np.std(window_data) if len(window_data) > 1 else 0
-                        elif stat == "min":
-                            new_value = np.min(window_data)
-                        elif stat == "max":
-                            new_value = np.max(window_data)
+                            # テストデータのインデックスを計算
+                            test_data_index = history_idx - len(y_train)
 
-                        test_df.loc[next_row_idx, col] = new_value
+                            if history_idx >= len(y_train) and test_data_index < start_idx:
+                                # テストデータの範囲内かつ現在のウィンドウより前のデータ
+                                window_data.loc[next_idx, col] = y_test[test_data_index]
+                            elif history_idx >= len(y_train):
+                                # 現在のウィンドウ内の予測値を使用
+                                window_data.loc[next_idx, col] = predictions[test_data_index]
+                            else:
+                                # 学習データの範囲内
+                                window_data.loc[next_idx, col] = y_train[history_idx]
 
-            # Log progress
-            if point_in_cycle == 0:
-                logger.info(f"Completed {i//2} hours of predictions")
-                print("\n=== 0時間経過（新サイクル開始） ===")
-            elif point_in_cycle == 48:
-                print("\n=== 24時間経過 ===")
-            elif point_in_cycle == 96:
-                print("\n=== 48時間経過 ===")
-            elif point_in_cycle == 143:
-                print("\n=== 72時間経過（サイクル終了） ===")
-                print("-" * 50)
+                # 進捗の出力
+                if point_in_cycle == 0:
+                    print(f"\n=== Window {window_idx + 1}: 0時間経過（開始） ===")
+                elif point_in_cycle == 48:
+                    print("\n=== 24時間経過 ===")
+                elif point_in_cycle == 96:
+                    print("\n=== 48時間経過 ===")
+                elif point_in_cycle == 143:
+                    print("\n=== 72時間経過（ウィンドウ終了） ===")
+                    print("-" * 50)
 
-            print(f"i: {i:3d} | cycle point: {point_in_cycle:3d} | hours: {hours:5.1f}")
+            # デバッグ情報をCSVファイルに出力
+            import pandas as pd
 
-            # Reset cycle if needed
-            if point_in_cycle == 143 and i + 1 < len(test_df):
-                start_idx = (i + 1) - 143
-                end_idx = i + 1
-                test_df.iloc[start_idx : end_idx + 1] = original_df.iloc[start_idx : end_idx + 1]
-                all_predictions = []
+            debug_df = pd.DataFrame(debug_info)
+            output_file = os.path.join(debug_output_path, f"debug_window_{window_idx + 1}.csv")
+            debug_df.to_csv(output_file, index=False)
+            logger.info(f"Saved debug information for window {window_idx + 1}")
 
-                # Update full history with actual values
-                full_history[:] = (
-                    list(train_df[target_col].values)
-                    + list(original_df[target_col].values[:start_idx])
-                    + list(final_predictions[start_idx:])
-                )
-
-        return np.array(final_predictions)
+        return np.array(predictions)
 
     def get_feature_importance(self, feature_names: list[str] | None = None) -> dict[str, float]:
         if not self.is_fitted:
@@ -195,7 +160,7 @@ class XGBoostModel(BaseModel):
 
 
 def main():
-    logger = setup_logger()
+    logger = setup_logger("xgboost")
     logger.info("Starting model training and prediction")
 
     model = XGBoostModel()
@@ -210,7 +175,9 @@ def main():
         "demand_rolling_2h_min",
         "demand_rolling_2h_max",
     ]
-    data_prep = DataPreparation("MAC000145_ml_ready.csv", *features_to_drop)
+    # data_prep = DataPreparation("MAC000145_ml_ready.csv", *features_to_drop)
+    data_prep = DataPreparation("MAC000152_ml_ready.csv", *features_to_drop)
+    # data_prep = DataPreparation("MAC000002_ml_ready.csv", *features_to_drop)
 
     data = data_prep.get_train_test_split(test_size=0.2)
     X_train, y_train = data["X_train"], data["y_train"]
@@ -227,44 +194,37 @@ def main():
     )
     logger.info("Model training completed")
 
-    # logger.info("Starting 72-hour predictions")
-    # predictions = model.predict_72h(X_test, y_train)
-    # logger.info("Predictions completed")
-
-    predictions = model.predict(X_test)
+    logger.info("Starting 72-hour predictions")
+    predictions = model.predict_72h(X_test, y_train, y_test)
+    logger.info("Predictions completed")
 
     evaluator = ModelEvaluator()
-    # evaluation_results = evaluator.evaluate_72h_predictions(actual=y_test.to_numpy(), predicted=predictions)
-    evaluation_results = evaluator.evaluate_predictions(actual=y_test.to_numpy(), predicted=predictions)
+    evaluation_results = evaluator.evaluate_72h_predictions(actual=y_test.to_numpy(), predicted=predictions)
 
-    # for i, result in enumerate(evaluation_results):
-    #     logger.info(f"\nWindow {i + 1}:")
-    #     logger.info(f"24h RMSE: {result['RMSE_24h']:.4f}")
-    #     logger.info(f"48h RMSE: {result['RMSE_48h']:.4f}")
-    #     logger.info(f"72h RMSE: {result['RMSE_72h']:.4f}")
+    # 平均RMSEの計算と表示
+    logger.info("\nAverage RMSE by Horizon:")
+    avg_rmse = {
+        horizon: np.mean([result[f"RMSE_{horizon}"] for result in evaluation_results])
+        for horizon in ["24h", "48h", "72h"]
+    }
+    for horizon, rmse in avg_rmse.items():
+        logger.info(f"{horizon}: {rmse:.4f}")
 
-    for key, value in evaluation_results.items():
-        logger.info(f"{key}: {value:.4f}")
+    # 全体のRMSEを表示（予測値の長さに合わせる）
+    valid_length = len(predictions)
+    overall_metrics = evaluator.evaluate_predictions(y_test[:valid_length], predictions)
+    logger.info(f"\nOverall RMSE: {overall_metrics['RMSE']:.4f}")
 
-    # feature_importance = model.get_feature_importance(feature_names=X_train.columns.tolist())
-    # print("\nFeature Importance:")
-    # for feature, importance in feature_importance.items():
-    #     print(f"{feature}: {importance:.4f}")
+    feature_importance = model.get_feature_importance(feature_names=X_train.columns.tolist())
+    print("\nFeature Importance:")
+    for feature, importance in feature_importance.items():
+        print(f"{feature}: {importance:.4f}")
 
-    # visualizer = Visualizer("XGBoost")
-
-    # visualizer.plot_predictions(
-    #     actual=y_test.to_numpy(), predicted=predictions, title=f"Demand Prediction ({len(predictions)} points)"
-    # )
-
-    # visualizer.plot_prediction_windows(
-    #     actual=y_test.to_numpy(),
-    #     predicted=predictions,
-    #     max_windows=3,
-    # )
-
-    # visualizer.plot_metrics(evaluation_results)
-    # logger.info("Visualization completed")
+    visualizer = Visualizer("XGBoost")
+    visualizer.plot_predictions(y_test, predictions)
+    visualizer.plot_prediction_windows(y_test, predictions)
+    visualizer.plot_metrics(evaluation_results)
+    logger.info("Visualization completed")
 
 
 if __name__ == "__main__":
